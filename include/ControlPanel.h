@@ -34,7 +34,7 @@ public:
 
 	void OnRender() override {
 		auto* fonts = GetFontContainer<FontContainer>();
-		ImGui::PushFont(fonts->openSans21);
+		ImGui::PushFont(fonts->robotoMedium);
 
 		ImGui::Text("List of Endpoints");
 		ImGui::SameLine();

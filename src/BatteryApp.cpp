@@ -8,7 +8,7 @@
 
 BatteryApp::BatteryApp() : Battery::Application(1280, 720, "ODriveGui") {
 	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
-	libusbcpp::setLogLevel(libusbcpp::LOG_LEVEL_WARN);
+	libusbcpp::setLogLevel(libusbcpp::LOG_LEVEL_INFO);
 }
 
 bool BatteryApp::OnStartup() {

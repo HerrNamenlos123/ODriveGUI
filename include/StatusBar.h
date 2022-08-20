@@ -79,7 +79,7 @@ public:
 		
 		if (ImGui::IsItemHovered()) {
 			ImGui::BeginTooltip();
-			ImGui::PushFont(fonts->openSans21);
+			ImGui::PushFont(fonts->openSans18);
 
 			for (size_t i = 0; i < T::_size(); i++) {
 				auto enumValue = T::_from_index((int32_t)i);
@@ -136,31 +136,71 @@ public:
 			if (odrive->connected) {
 				openEndpointSelector = ImGui::Button("Show endpoints", { -1, 40 });
 
-				ImGui::Text("Axis error: ");
+				ImGui::Text("Axis 0 error: ");
 				ImGui::SameLine();
-				if (odrive->axisError) {
-					ImGui::TextColored(RED, "0x%04X", odrive->axisError);
-					errorTooltip<AxisError>(odrive, AxisErrorDesc, odrive->axisError);
+				if (odrive->axis0Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->axis0Error);
+					errorTooltip<AxisError>(odrive, AxisErrorDesc, odrive->axis0Error);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
 				}
 
-				ImGui::Text("Motor error: ");
+				ImGui::Text("Motor 0 error: ");
 				ImGui::SameLine();
-				if (odrive->motorError) {
-					ImGui::TextColored(RED, "0x%04X", odrive->motorError);
-					errorTooltip<MotorError>(odrive, MotorErrorDesc, odrive->motorError);
+				if (odrive->motor0Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->motor0Error);
+					errorTooltip<MotorError>(odrive, MotorErrorDesc, odrive->motor0Error);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
 				}
 
-				ImGui::Text("Encoder error: ");
+				ImGui::Text("Encoder 0 error: ");
 				ImGui::SameLine();
-				if (odrive->encoderError) {
-					ImGui::TextColored(RED, "0x%04X", odrive->encoderError);
-					errorTooltip<EncoderError>(odrive, EncoderErrorDesc, odrive->encoderError);
+				if (odrive->encoder0Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->encoder0Error);
+					errorTooltip<EncoderError>(odrive, EncoderErrorDesc, odrive->encoder0Error);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Controller 0 error: ");
+				ImGui::SameLine();
+				if (odrive->controller0Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->controller0Error);
+					errorTooltip<ControllerError>(odrive, ControllerErrorDesc, odrive->controller0Error);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Axis 1 error: ");
+				ImGui::SameLine();
+				if (odrive->axis1Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->axis1Error);
+					errorTooltip<AxisError>(odrive, AxisErrorDesc, odrive->axis1Error);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Motor 1 error: ");
+				ImGui::SameLine();
+				if (odrive->motor1Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->motor1Error);
+					errorTooltip<MotorError>(odrive, MotorErrorDesc, odrive->motor1Error);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Encoder 1 error: ");
+				ImGui::SameLine();
+				if (odrive->encoder1Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->encoder1Error);
+					errorTooltip<EncoderError>(odrive, EncoderErrorDesc, odrive->encoder1Error);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -168,11 +208,11 @@ public:
 
 				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 20 });
 
-				ImGui::Text("Controller error: ");
+				ImGui::Text("Controller 1 error: ");
 				ImGui::SameLine();
-				if (odrive->controllerError) {
-					ImGui::TextColored(RED, "0x%04X", odrive->controllerError);
-					errorTooltip<ControllerError>(odrive, ControllerErrorDesc, odrive->controllerError);
+				if (odrive->controller1Error) {
+					ImGui::TextColored(RED, "0x%04X", odrive->controller1Error);
+					errorTooltip<ControllerError>(odrive, ControllerErrorDesc, odrive->controller1Error);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -181,6 +221,11 @@ public:
 
 				if (ImGui::Button("Clear errors", { -1, 40 })) {
 					odrive->executeFunction("axis0.clear_errors");
+					odrive->executeFunction("axis1.clear_errors");
+				}
+
+				if (ImGui::Button("Export endpoint definitions", { -1, 40 })) {
+					odrive->exportEndpoints();
 				}
 
 				ImGui::PopStyleVar();
@@ -253,9 +298,8 @@ public:
 			}
 		}
 		else if (ep->type == "function") {		// It's a function
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
 
-			ImGui::Text("%s()   ->", ep->identifier.c_str());
+			ImGui::BulletText("%s()   ->", ep->identifier.c_str());
 			ImGui::SameLine();
 			ImGui::TextColored(COLOR_FUNCTION, "function");
 			ImGui::SameLine();
@@ -267,9 +311,8 @@ public:
 			}
 		}
 		else {			// It's a numeric endpoint with a value
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
 
-			ImGui::Text("%s   = ", ep->identifier.c_str());
+			ImGui::BulletText("%s   = ", ep->identifier.c_str());
 			ImGui::SameLine();
 
 			if (ep->type == "float") {
@@ -343,13 +386,14 @@ public:
 
 	void OnRender() override {
 		fonts = GetFontContainer<FontContainer>();
-		ImGui::PushFont(fonts->openSans25);
+		ImGui::PushFont(fonts->robotoMedium);
 
 		makeODriveClickableFields();
 
+		//ImGui::PushFont(fonts->openSans21);
 		drawODriveInfoWindow();
-
 		drawEndpointSelectorWindow();
+		//ImGui::PopFont();
 
 		ImGui::PopFont();
 	}

@@ -4,6 +4,7 @@
 #include "CRC.h"
 #include "Endpoint.h"
 #include "libusbcpp.h"
+#include <stdio.h>
 
 #include "json.hpp"
 
@@ -19,6 +20,22 @@
 typedef std::vector<uint8_t> buffer_t;
 using njson = nlohmann::json;
 
+static inline std::string toUpper(const std::string& str) {
+	std::string s;
+	for (char c : str) 
+		s += toupper(c);
+
+	return s;
+}
+
+static inline std::string replace(const std::string& str, char find, char replace) {
+	std::string s;
+	for (char c : str)
+		s += (c == find) ? replace : c;
+
+	return s;
+}
+
 class ODrive {
 public:
 
@@ -31,10 +48,14 @@ public:
 	std::vector<BasicEndpoint> cachedEndpoints;
 
 	bool error = false;
-	int32_t axisError = 0x00;
-	int32_t motorError = 0x00;
-	int32_t encoderError = 0x00;
-	int32_t controllerError = 0x00;
+	int32_t axis0Error = 0x00;
+	int32_t axis1Error = 0x00;
+	int32_t motor0Error = 0x00;
+	int32_t motor1Error = 0x00;
+	int32_t encoder0Error = 0x00;
+	int32_t encoder1Error = 0x00;
+	int32_t controller0Error = 0x00;
+	int32_t controller1Error = 0x00;
 
 	ODrive(libusbcpp::device device) : device(device) {
 		if (!device) {
@@ -64,6 +85,7 @@ public:
 			}
 		}
 		LOG_WARN("Timeout: Failed to read endpoint {}", endpoint);
+		LOG_WARN("Requested data was: Endpoint: {}, type {}, no payload, crc=0x{:04X}", endpoint, typeid(T).name(), jsonCRC);
 		return false;
 	}
 
@@ -86,7 +108,11 @@ public:
 		memcpy(&payload[0], &value, sizeof(T));
 
 		std::lock_guard<std::mutex> lock(transferMutex);
-		sendWriteRequest(endpoint, sizeof(T), payload, jsonCRC);
+		if (sendWriteRequest(endpoint, sizeof(T), payload, jsonCRC) == -1) {
+			LOG_WARN("Timeout: Failed to write endpoint {} value {}", endpoint, value);
+			LOG_WARN("Written data was: Endpoint: {}, type {}, payload=value, crc=0x{:04X}", endpoint, typeid(T).name(), jsonCRC);
+			return false;
+		}
 
 		return true;
 	}
@@ -108,13 +134,76 @@ public:
 		}
 	}
 
-	void updateErrors() {
-		read<int32_t>("axis0.error", &axisError);
-		read<int32_t>("axis0.motor.error", &motorError);
-		read<int32_t>("axis0.encoder.error", &encoderError);
-		read<int32_t>("axis0.controller.error", &controllerError);
+	void exportEndpoints() {
+		std::string file;
 
-		error = axisError || motorError || encoderError || controllerError;
+		uint8_t fw_version_major;
+		uint8_t fw_version_minor;
+		uint8_t fw_version_revision;
+		uint8_t fw_version_unreleased;
+		read<uint8_t>("fw_version_major", &fw_version_major);
+		read<uint8_t>("fw_version_minor", &fw_version_minor);
+		read<uint8_t>("fw_version_revision", &fw_version_revision);
+		read<uint8_t>("fw_version_unreleased", &fw_version_unreleased);
+
+		file += "\n// This file was auto-generated with https://github.com/HerrNamenlos123/ODriveGui\n";
+		file += "// It defines the endpoints for use with the ODriveNativeLib Arduino library\n";
+		file += "// FW version: " + 
+			std::to_string(fw_version_major) + "." + 
+			std::to_string(fw_version_minor) + "." +
+			std::to_string(fw_version_revision) + ":" +
+			std::to_string(fw_version_unreleased) + " with JSON CRC " + fmt::format("0x{:04X}", jsonCRC) + "\n";
+
+		file += "//\n";
+		file += "// Example:\n";
+		file += "//\n";
+		file += "//  odrv0.sendReadRequest<ENDPOINT_VBUS_VOLTAGE>();\n";
+		file += "//\n";
+		file += "// or\n";
+		file += "//\n";
+		file += "//  void OnDataCallback(uint16_t endpointID, uint8_t* data, size_t dataSize) {\n";
+		file += "//  \n";
+		file += "//      switch (endpointID) {\n";
+		file += "//          ENDPOINT_CASE(vbus_voltage, ENDPOINT_VBUS_VOLTAGE); break;\n";
+		file += "//          ENDPOINT_DEFAULT_CASE();\n";
+		file += "//      }\n";
+		file += "//  }\n";
+		file += "//\n";
+		file += "// ENDPOINT_CASE and ENDPOINT_DEFAULT_CASE should be defined in <ODrive.h> from the ODriveNativeLib\n";
+		file += "//\n\n";
+
+		file += "#ifndef __ENDPOINTS_H\n#define __ENDPOINTS_H\n\n";
+
+		file += "#define JSON_CRC " + fmt::format("0x{:04X}", jsonCRC) + "\n\n";
+		
+		for (auto& endpoint : cachedEndpoints) {
+			std::string identifier = replace(toUpper(endpoint.identifier), '.', '_');
+			std::string type = endpoint.type;
+			if (type.find("int") != std::string::npos) type += "_t";
+			if (type == "function") type = "bool";
+			file += "#define ENDPOINT_TYPE_" + identifier + " " + type + "\n";
+			file += "#define ENDPOINT_ID_" + identifier + " " + std::to_string(endpoint.id) + "\n";
+			file += "#define ENDPOINT_" + identifier + " JSON_CRC, ENDPOINT_ID_" + 
+				identifier + ", ENDPOINT_TYPE_" + identifier + "\n\n";
+		}
+
+		file += "#endif // __ENDPOINTS_H\n";
+
+		Battery::SaveFileWithDialog("h", file, Battery::GetMainWindow());
+	}
+
+	void updateErrors() {
+		read<int32_t>("axis0.error", &axis0Error);
+		read<int32_t>("axis0.motor.error", &motor0Error);
+		read<int32_t>("axis0.encoder.error", &encoder0Error);
+		read<int32_t>("axis0.controller.error", &controller0Error);
+		read<int32_t>("axis1.error", &axis1Error);
+		read<int32_t>("axis1.motor.error", &motor1Error);
+		read<int32_t>("axis1.encoder.error", &encoder1Error);
+		read<int32_t>("axis1.controller.error", &controller1Error);
+
+		error = axis0Error || motor0Error || encoder0Error || controller0Error || 
+			    axis1Error || motor1Error || encoder1Error || controller1Error;
 	}
 
 	uint64_t getSerialNumber() {
@@ -149,6 +238,7 @@ public:
 private:
 	void disconnect() {
 		connected = false;
+		device->close();
 	}
 
 	void generateEndpoints(int odriveID) {
@@ -234,11 +324,13 @@ private:
 
 	uint16_t sendRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
 		sequenceNumber = (sequenceNumber + 1) % 4096;
-		sendRequest(sequenceNumber, endpointID, expectedResponseSize, payload, jsonCRC);
-		return sequenceNumber;
+		if (sendRequest(sequenceNumber, endpointID, expectedResponseSize, payload, jsonCRC))
+			return sequenceNumber;
+		else
+			return -1;
 	}
 
-	void sendRequest(uint16_t sequenceNumber, uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
+	bool sendRequest(uint16_t sequenceNumber, uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
 		buffer_t buffer;
 		buffer.reserve(payload.size() + 8);
 
@@ -258,16 +350,17 @@ private:
 		buffer.push_back((uint8_t)(jsonCRC));
 		buffer.push_back((uint8_t)(jsonCRC >> 8));
 
-		write(&buffer[0], buffer.size());
+		return write(&buffer[0], buffer.size());
 	}
 
-	void write(uint8_t* data, size_t length) {
+	bool write(uint8_t* data, size_t length) {
 		for (int i = 0; i < 5; i++) {
 			if (device->bulkWrite(data, length, ODRIVE_USB_WRITE_ENDPOINT) != -1) {
-				return;
+				return true;
 			}
 		}
 		disconnect();
+		return false;
 	}
 
 	std::vector<uint8_t> read(size_t expectedLength) {

@@ -55,43 +55,49 @@ Entry::Entry(const nlohmann::json& json) {
 	}
 }
 
-void Entry::updateValue() {
-	std::unique_lock<std::mutex> lock(mutex);
+void Entry::updateValue() {		// If locking the mutex fails, simply ignore and return
+	try {
+		std::unique_lock<std::mutex> lock(mutex);
 
-	// Update the changed flags
-	oldValues[endpoint->fullPath] = value;
-	for (Endpoint& e : endpoint.inputs) {
-		oldValues[e->fullPath] = ioValues[e->fullPath];
-	}
-	for (Endpoint& e : endpoint.outputs) {
-		oldValues[e->fullPath] = ioValues[e->fullPath];
-	}
-	lock.unlock();
+		if (endpoint->fullPath == "")
+			return;
 
-	// And now read
-	auto temp = backend->readEndpointDirect(endpoint.basic);
-	if (temp.type() != EndpointValueType::INVALID) {
-		lock.lock();
-		value = temp;
+		// Update the changed flags
+		oldValues[endpoint->fullPath] = value;
+		for (Endpoint& e : endpoint.inputs) {
+			oldValues[e->fullPath] = ioValues[e->fullPath];
+		}
+		for (Endpoint& e : endpoint.outputs) {
+			oldValues[e->fullPath] = ioValues[e->fullPath];
+		}
 		lock.unlock();
-	}
 
-	for (Endpoint& e : endpoint.inputs) {
-		auto temp = backend->readEndpointDirect(e.basic);
+		// And now read
+		auto temp = backend->readEndpointDirect(endpoint.basic);
 		if (temp.type() != EndpointValueType::INVALID) {
 			lock.lock();
-			ioValues[e->fullPath] = temp;
+			value = temp;
 			lock.unlock();
 		}
-	}
-	for (Endpoint& e : endpoint.outputs) {
-		auto temp = backend->readEndpointDirect(e.basic);
-		if (temp.type() != EndpointValueType::INVALID) {
-			lock.lock();
-			ioValues[e->fullPath] = temp;
-			lock.unlock();
+
+		for (Endpoint& e : endpoint.inputs) {
+			auto temp = backend->readEndpointDirect(e.basic);
+			if (temp.type() != EndpointValueType::INVALID) {
+				lock.lock();
+				ioValues[e->fullPath] = temp;
+				lock.unlock();
+			}
+		}
+		for (Endpoint& e : endpoint.outputs) {
+			auto temp = backend->readEndpointDirect(e.basic);
+			if (temp.type() != EndpointValueType::INVALID) {
+				lock.lock();
+				ioValues[e->fullPath] = temp;
+				lock.unlock();
+			}
 		}
 	}
+	catch (...) {}
 }
 
 bool Entry::drawImGuiNumberInputField(const std::string& imguiIdentifier, ImGuiInputTextFlags flags) {
@@ -198,7 +204,7 @@ void Entry::draw() {
 
 	if (endpoint->type != "function") {	// Numeric values
 
-		if (ImGui::Button(("x##" + endpoint->fullPath).c_str(), { 40, 0 })) {
+		if (ImGui::Button(("x##" + endpoint->fullPath + std::to_string(entryID)).c_str(), { 40, 0 })) {
 			toBeRemoved = true;
 		}
 		ImGui::SameLine();

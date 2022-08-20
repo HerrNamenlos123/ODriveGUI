@@ -12,11 +12,14 @@ public:
 	std::map<std::string, EndpointValue> oldValues;
 	bool toBeRemoved = false;
 	
-	size_t entryID;
-	inline static size_t entryIDCounter = 0;
 	char imguiBuffer[IMGUI_BUFFER_SIZE + 1];
 	size_t selected = 0;
 
+private:
+	size_t entryID = 0;
+	inline static size_t entryIDCounter = 0;
+
+public:
 	Entry(const Endpoint& bep);
 	Entry(const nlohmann::json& json);
 
@@ -36,7 +39,8 @@ public:
 		ioValues = e.ioValues;
 		oldValues = e.oldValues;
 		toBeRemoved = e.toBeRemoved;
-		entryID = entryID;
+		entryID = entryIDCounter;
+		entryIDCounter++;
 		selected = 0;
 		memset(imguiBuffer, 0, sizeof(imguiBuffer));
 	}
